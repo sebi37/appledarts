@@ -1,0 +1,65 @@
+### Xcode ###
+# Build artifacts
+build/
+DerivedData/
+*.ipa
+*.xcarchive
+
+# User-specific data
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+
+# Workspace settings
+# (xcworkspace selbst bleibt, aber user-spezifische Einstellungen raus)
+*.xcscmblueprint
+
+# Logs
+*.log
+
+### Swift / SwiftPM ###
+.swiftpm/
+.build/
+Package.resolved
+
+### CocoaPods ###
+Pods/
+# If you use `pod install --repo-update`
+Repo/
+
+### Carthage ###
+Carthage/Build/
+
+### Fastlane ###
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output/
+
+### dSYM files (Debug symbol files) ###
+*.dSYM.zip
+*.dSYM
+
+### iOS Simulator ###
+Library/Developer/CoreSimulator/*
+!Library/Developer/CoreSimulator/Devices/
+
+### macOS ###
+.DS_Store
+
+### General ###
+*.swp
+*.lock
+*.tmp
+*.orig
+*.bak
+
+### Xcode project metadata (often irrelevant) ###
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+### Playgrounds ###
+timeline.xctimeline
+playground.xcworkspace
+
