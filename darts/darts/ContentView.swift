@@ -16,8 +16,27 @@ struct ContentView: View {
     var body: some View {
         RealityView { content in
             // Add the initial RealityKit content
-            if let scene = try? await Entity(named: "Scene", in: realityKitContentBundle) {
+            if let scene = try? await Entity(named: "Immersive", in: realityKitContentBundle) {
+                _ = scene.findEntity(named: "SegmentModel")
+                if let segment = scene.findEntity(named: "SegmentModel"),
+                   let meshEntity = segment.findEntity(named: "Körper1"),
+                   let model = meshEntity.components[ModelComponent.self] {
+
+                    do {
+                        let convex = try await ShapeResource.generateConvex(from: model.mesh)
+                        segment.components.set(
+                            CollisionComponent(
+                                shapes: [convex],
+                                isStatic: true
+                            )
+                        )
+                    } catch {
+                        print("Collision generation failed: \(error)")
+                    }
+                }
+
                 content.add(scene)
+                    
             }
         } update: { content in
             // Update the RealityKit content when SwiftUI state changes

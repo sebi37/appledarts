@@ -16,25 +16,29 @@
       [
         "1D572CEB-057A-41C3-B575-04C37501A3C0",
         "Root",
-        "Sphere_Left"
+        "Dartboard",
+        "SegmentModel"
       ],
       {
         "isExpanded" : true,
+        "isLocked" : false
+      },
+      [
+        "1D572CEB-057A-41C3-B575-04C37501A3C0",
+        "Root",
+        "Dartboard",
+        "SegmentModel",
+        "Körper1"
+      ],
+      {
+        "disallowsFraming" : false,
+        "isExpanded" : false,
         "isLocked" : false
       },
       [
         "1D572CEB-057A-41C3-B575-04C37501A3C0",
         "Root",
         "Sphere_Right"
-      ],
-      {
-        "isExpanded" : true,
-        "isLocked" : false
-      },
-      [
-        "1D572CEB-057A-41C3-B575-04C37501A3C0",
-        "Root",
-        "Dartboard"
       ],
       {
         "isExpanded" : true,
@@ -51,7 +55,16 @@
       [
         "1D572CEB-057A-41C3-B575-04C37501A3C0",
         "Root",
-        "Material"
+        "Dartboard"
+      ],
+      {
+        "isExpanded" : true,
+        "isLocked" : false
+      },
+      [
+        "1D572CEB-057A-41C3-B575-04C37501A3C0",
+        "Root",
+        "Sphere_Left"
       ],
       {
         "isExpanded" : true,
@@ -62,6 +75,15 @@
         "Root",
         "Dartboard",
         "_11721_darboard_V4_L3"
+      ],
+      {
+        "isExpanded" : true,
+        "isLocked" : false
+      },
+      [
+        "1D572CEB-057A-41C3-B575-04C37501A3C0",
+        "Root",
+        "Material"
       ],
       {
         "isExpanded" : true,

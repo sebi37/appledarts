@@ -17,6 +17,7 @@ def Xform "Root"
         references = @Untitled.usdc@
     )
     {
+        reorder nameChildren = ["SegmentModel", "_11721_darboard_V4_L3", "env_light"]
         rel material:binding = </Root/Material> (
             bindMaterialAs = "weakerThanDescendants"
         )
@@ -45,6 +46,43 @@ def Xform "Root"
                 )
                 quatf xformOp:orient = (-4.371139e-8, 0, 1, 0)
                 float3 xformOp:scale = (0.1, 0.1, 0.1)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+        }
+
+        def "SegmentModel" (
+            active = true
+            customData = {
+                float3 rotationEulerHint = (1.5707973, -0.0069813174, -4.656726e-10)
+            }
+            prepend references = @SegmentModel.usdz@
+        )
+        {
+            quatf xformOp:orient = (0.7071021, 0.70710284, -0.0024682623, 0.0024682644)
+            float3 xformOp:scale = (0.118, 0.118, 0.118)
+            float3 xformOp:translate = (0.0009809601, 0.08618945, 0.024740357)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+            over "XID_SteelSatin_012510004ACCDE567687595EEACF9B7F"
+            {
+                token outputs:mtlx:surface
+                token outputs:realitykit:vertex
+
+                over "XID_SteelSatin_012510004ACCDE567687595EEACF9B7F_shader"
+                {
+                    color3f inputs:diffuseColor = (0.81306547, 0.045177314, 0) (
+                        colorSpace = "srgb_displayp3"
+                    )
+                    float inputs:opacity = 0
+                    float inputs:opacityThreshold = 0
+                }
+            }
+
+            over "Körper1"
+            {
+                quatf xformOp:orient = (1, 0, 0, 0)
+                float3 xformOp:scale = (1, 1, 1)
+                float3 xformOp:translate = (0, 0, 0)
                 uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
             }
         }
