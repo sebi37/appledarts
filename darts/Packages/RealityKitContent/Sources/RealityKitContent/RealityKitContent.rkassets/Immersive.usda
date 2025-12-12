@@ -17,7 +17,7 @@ def Xform "Root"
         references = @Untitled.usdc@
     )
     {
-        reorder nameChildren = ["SegmentModel", "_11721_darboard_V4_L3", "env_light"]
+        reorder nameChildren = ["_11721_darboard_V4_L3", "env_light", "SegmentModel20", "Segment1"]
         rel material:binding = </Root/Material> (
             bindMaterialAs = "weakerThanDescendants"
         )
@@ -50,17 +50,18 @@ def Xform "Root"
             }
         }
 
-        def "SegmentModel" (
+        def "SegmentModel20" (
             active = true
             customData = {
-                float3 rotationEulerHint = (1.5707973, -0.0069813174, -4.656726e-10)
+                float3 rotationEulerHint = (1.5707965, -0.006981317, -6.985089e-10)
             }
-            prepend references = @SegmentModel.usdz@
+            references = @SegmentModel.usdz@
         )
         {
-            quatf xformOp:orient = (0.7071021, 0.70710284, -0.0024682623, 0.0024682644)
+            reorder nameChildren = ["XID_SteelSatin_012510004ACCDE567687595EEACF9B7F", "Körper1", "Körper1_1"]
+            quatf xformOp:orient = (0.7071024, 0.70710254, -0.0024682633, 0.0024682633)
             float3 xformOp:scale = (0.118, 0.118, 0.118)
-            float3 xformOp:translate = (0.0009809601, 0.08618945, 0.024740357)
+            float3 xformOp:translate = (0, 0.085, 0.03)
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
 
             over "XID_SteelSatin_012510004ACCDE567687595EEACF9B7F"
@@ -78,7 +79,17 @@ def Xform "Root"
                 }
             }
 
-            over "Körper1"
+            over "Körper1" (
+                customData = {
+                    dictionary RE = {
+                        dictionary mesh = {
+                            dictionary v1 = {
+                                bool reorderVertexCaching = 0
+                            }
+                        }
+                    }
+                }
+            )
             {
                 quatf xformOp:orient = (1, 0, 0, 0)
                 float3 xformOp:scale = (1, 1, 1)
