@@ -7,61 +7,74 @@
 
 import SwiftUI
 import RealityKit
+import ARKit
 import RealityKitContent
 
 struct ImmersiveView: View {
 
     var body: some View {
         RealityView { content in
-            // Add the initial RealityKit content
-            if let immersiveContentEntity = try? await Entity(named: "Immersive", in: realityKitContentBundle) {
-                content.add(immersiveContentEntity)
+            // MARK: - Dartboard laden
+            if let scene = try? await Entity(named: "Immersive", in: realityKitContentBundle),
+               let dartboard = scene.findEntity(named: "Dartboard") {
 
-                // Put skybox here.  See example in World project available at
-                // https://developer.apple.com/
-            
-                // Test: sichtbaren Dart (Zylinder) zur Szene hinzufügen
-                do {
-                    let radius: Float = 0.01   // 1 cm
-                    let height: Float = 0.15   // 15 cm
-                    let mesh = MeshResource.generateCylinder(height: height, radius: radius)
+                // Anchor im Raum (frei)
+                
+                
+                var manipulationComponent = ManipulationComponent()
+                manipulationComponent.releaseBehavior = .stay
+                manipulationComponent.dynamics.scalingBehavior = .none
+                dartboard.components.set(manipulationComponent)
+                
+                dartboard.position = SIMD3(x: 0, y: 1.2, z: -1.0)
+                
+                // Dartboard als Kind hinzufügen
+                
+                content.add(dartboard)
+            }
+            // MARK: - Dart vor dem Nutzer hinzufügen
+            do {
+                let radius: Float = 0.01   // 1 cm
+                let height: Float = 0.15   // 15 cm
+                let mesh = MeshResource.generateCylinder(height: height, radius: radius)
 
-                    var material = SimpleMaterial(color: .red, isMetallic: true)
-                    material.roughness = .float(0.3)
-                    material.metallic = .float(0.6)
+                var material = SimpleMaterial(color: .red, isMetallic: true)
+                material.roughness = .float(0.3)
+                material.metallic = .float(0.6)
 
-                    let dart = ModelEntity(mesh: mesh, materials: [material])
+                let dart = ModelEntity(mesh: mesh, materials: [material])
 
-                    // Positioniere den Dart vor der Scheibe (ggf. Z anpassen)
-                    dart.position = [0, 1.4, -1.0]
-                    dart.orientation = simd_quatf(angle: .pi / 10, axis: [1, 0, 0])
+                // Positioniere den Dart ca. 1 Meter vor dem Nutzer auf Schulterhöhe
+                dart.position = [0, 1.4, -1.0]
+                dart.orientation = simd_quatf(angle: .pi / 10, axis: [1, 0, 0])
 
-                    // Physik + Dämpfung
-                    var body = PhysicsBodyComponent(massProperties: .default, material: .default, mode: .dynamic)
-                    body.linearDamping = 0.1
-                    body.angularDamping = 5.0
-                    dart.components.set(body)
+                // Physik + Dämpfung
+                var body = PhysicsBodyComponent(massProperties: .default, material: .default, mode: .dynamic)
+                body.linearDamping = 0.1
+                body.angularDamping = 5.0
+                body.isAffectedByGravity = false
+                dart.components.set(body)
 
-                    // Kollision als Kapsel
-                    dart.components.set(
-                        CollisionComponent(
-                            shapes: [ShapeResource.generateCapsule(height: height, radius: radius)]
-                        )
+                // Kollision als Kapsel
+                dart.components.set(
+                    CollisionComponent(
+                        shapes: [ShapeResource.generateCapsule(height: height, radius: radius)]
                     )
+                )
 
-                    immersiveContentEntity.addChild(dart)
-                }
+                // Direkt zur Szene hinzufügen
+                content.add(dart)
             }
         }
-        .overlay(alignment: .bottom) {
-            // Overlay with controls/UI for throwing darts
-            DartThrowView()
-                .padding()
-        }
+//        .overlay(alignment: .bottom) {
+//            // UI/Controls zum Werfen von Darts
+//            DartThrowView()
+//                .padding()
+//        }
     }
 }
 
-#Preview(immersionStyle: .full) {
+#Preview {
     ImmersiveView()
         .environment(AppModel())
 }
