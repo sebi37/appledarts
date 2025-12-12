@@ -6,6 +6,7 @@ import RealityKitContent
 // MARK: - Eigener State für Dart
 struct DartStateComponent: Component {
     var wasHeld: Bool = false
+    var wasThrown: Bool = false
 }
 
 struct ImmersiveView: View {
@@ -36,7 +37,8 @@ struct ImmersiveView: View {
         dart.components.set(InputTargetComponent())
 
         var manipulation = ManipulationComponent()
-        manipulation.releaseBehavior = .stay
+        // NOTE: In some visionOS SDK versions, ReleaseBehavior doesn't have `.remove`.
+        // We'll handle "throw" explicitly on tap instead of relying on release behavior.
         dart.components.set(manipulation)
 
         dart.components.set(DartStateComponent())
@@ -70,6 +72,39 @@ struct ImmersiveView: View {
         )
 
         return table
+    }
+    
+    // MARK: - Ball
+    func createBall() -> ModelEntity {
+        let radius: Float = 0.04
+
+        let ball = ModelEntity(
+            mesh: .generateSphere(radius: radius),
+            materials: [SimpleMaterial(color: .blue, isMetallic: false)]
+        )
+
+        ball.name = "Ball"
+
+        ball.components.set(
+            CollisionComponent(
+                shapes: [.generateSphere(radius: radius)]
+            )
+        )
+
+        ball.components.set(
+            PhysicsBodyComponent(
+                massProperties: .default,
+                material: .default,
+                mode: .dynamic
+            )
+        )
+
+        ball.components.set(InputTargetComponent())
+
+        var manipulation = ManipulationComponent()
+        ball.components.set(manipulation)
+
+        return ball
     }
 
     var body: some View {
@@ -108,6 +143,11 @@ struct ImmersiveView: View {
             let table = createTable()
             content.add(table)
 
+            // ⚽ Ball auf dem Tisch
+            let ball = createBall()
+            ball.position = SIMD3(0.2, 0.9, -0.6)
+            content.add(ball)
+
             // 🎯 Drei Darts
             for i in 0..<3 {
                 let dart = createDart()
@@ -120,50 +160,54 @@ struct ImmersiveView: View {
             }
 
         } update: { content in
-            // 🎯 Referenz auf Dartboard
-            let dartboard = content.entities.first { $0.name == "Dartboard" }
-
-            // 🏹 Loslassen erkennen → Wurf
             for entity in content.entities {
                 guard entity.name == "Dart",
                       var state = entity.components[DartStateComponent.self]
                 else { continue }
 
-                let isCurrentlyHeld =
-                    entity.components[ManipulationComponent.self] != nil
+                let isCurrentlyHeld = entity.components[ManipulationComponent.self] != nil
+                state.wasHeld = isCurrentlyHeld
+                entity.components.set(state)
+            }
+        }
+        .gesture(
+            SpatialTapGesture()
+                .targetedToAnyEntity()
+                .onEnded { value in
+                    guard value.entity.name == "Dart" || value.entity.name == "Ball" else { return }
 
-                // 👉 Übergang: gehalten → losgelassen
-                if state.wasHeld && !isCurrentlyHeld,
-                   let board = dartboard {
+                    // Find the dartboard in the same scene (works even if it's not a top-level entity)
+                    let board = value.entity.scene?.findEntity(named: "Dartboard")
+                    let targetPos = board?.position ?? SIMD3<Float>(0, 0.8, -2.0)
 
-                    entity.components.remove(ManipulationComponent.self)
-                    entity.components.remove(PhysicsMotionComponent.self)
+                    guard let dartEntity = value.entity as? ModelEntity else { return }
 
-                    // Richtung vom Dart zur Scheibe
-                    let direction = normalize(board.position - entity.position)
+                    // Hand over control to physics
+                    dartEntity.components.remove(ManipulationComponent.self)
+                    dartEntity.components.remove(PhysicsMotionComponent.self)
 
-                    // Physik auf dynamisch umstellen
                     var body = PhysicsBodyComponent(
                         massProperties: .default,
                         material: .default,
                         mode: .dynamic
                     )
-                    body.linearDamping = 0.1
-                    body.angularDamping = 10.0
-                    entity.components.set(body)
+                    body.linearDamping = 0.05
+                    body.angularDamping = 8.0
+                    dartEntity.components.set(body)
 
-                    // Fluggeschwindigkeit setzen
-                    entity.components.set(
-                        PhysicsMotionComponent(
-                            linearVelocity: direction * 4.0
-                        )
-                    )
+                    // Throw toward the dartboard
+                    let direction = normalize(targetPos - dartEntity.position)
+                    var motion = PhysicsMotionComponent()
+                    motion.linearVelocity = direction * 4.0
+                    dartEntity.components.set(motion)
+
+                    // Mark as thrown (optional; keeps state coherent)
+                    if var state = value.entity.components[DartStateComponent.self] {
+                        state.wasThrown = true
+                        value.entity.components.set(state)
+                    }
                 }
-
-                state.wasHeld = isCurrentlyHeld
-                entity.components.set(state)
-            }
-        }
+        )
     }
 }
 
