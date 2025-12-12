@@ -1,76 +1,72 @@
-//
-//  ImmersiveView.swift
-//  darts
-//
-//  Created by Sebastian Buresch on 21.11.25.
-//
-
 import SwiftUI
 import RealityKit
-import ARKit
 import RealityKitContent
 
 struct ImmersiveView: View {
 
+    func createDartboard() -> Entity {
+        let dartboard = Entity()
+
+        let rings: [(radius: Float, color: UIColor)] = [
+            (0.5, .black),
+            (0.45, .white),
+            (0.4, .red),
+            (0.35, .green),
+            (0.3, .yellow)
+        ]
+
+        let height: Float = 0.02
+        let zOffsetStep: Float = -0.002
+
+        for (index, ring) in rings.enumerated() {
+            let cylinder = ModelEntity(
+                mesh: MeshResource.generateCylinder(height: height, radius: ring.radius),
+                materials: [SimpleMaterial(color: ring.color, isMetallic: false)]
+            )
+
+            cylinder.position = SIMD3(0, Float(index) * zOffsetStep, 0)
+
+            // Approximation der Kollision mit Box
+            let collision = CollisionComponent(
+                shapes: [ShapeResource.generateBox(size: [ring.radius*2, height, ring.radius*2])]
+            )
+            cylinder.components.set(collision)
+            
+            cylinder.components.set(InputTargetComponent())
+
+            dartboard.addChild(cylinder)
+        }
+
+        dartboard.orientation = simd_quatf(angle: -.pi / 2, axis: [1, 0, 0])
+
+        var manipulation = ManipulationComponent()
+        manipulation.releaseBehavior = .stay
+        manipulation.dynamics.scalingBehavior = .none
+        dartboard.components.set(manipulation)
+
+        return dartboard
+    }
+
+
     var body: some View {
         RealityView { content in
-            // MARK: - Dartboard laden
+//            let dartboard = createDartboard()
+//            dartboard.position = SIMD3(x: 0, y: 1.2, z: -1.0)
+//            content.add(dartboard)
+            
             if let scene = try? await Entity(named: "Immersive", in: realityKitContentBundle),
                let dartboard = scene.findEntity(named: "Dartboard") {
-
-                // Anchor im Raum (frei)
+                dartboard.generateCollisionShapes(recursive: true)
+                dartboard.components.set(InputTargetComponent())
                 
-                
-                var manipulationComponent = ManipulationComponent()
-                manipulationComponent.releaseBehavior = .stay
-                manipulationComponent.dynamics.scalingBehavior = .none
-                dartboard.components.set(manipulationComponent)
-                
-                dartboard.position = SIMD3(x: 0, y: 1.2, z: -1.0)
-                
-                // Dartboard als Kind hinzufügen
+                var manipulation = ManipulationComponent()
+                manipulation.releaseBehavior = .stay
+                manipulation.dynamics.scalingBehavior = .none
+                dartboard.components.set(manipulation)
                 
                 content.add(dartboard)
             }
-            // MARK: - Dart vor dem Nutzer hinzufügen
-            do {
-                let radius: Float = 0.01   // 1 cm
-                let height: Float = 0.15   // 15 cm
-                let mesh = MeshResource.generateCylinder(height: height, radius: radius)
-
-                var material = SimpleMaterial(color: .red, isMetallic: true)
-                material.roughness = .float(0.3)
-                material.metallic = .float(0.6)
-
-                let dart = ModelEntity(mesh: mesh, materials: [material])
-
-                // Positioniere den Dart ca. 1 Meter vor dem Nutzer auf Schulterhöhe
-                dart.position = [0, 1.4, -1.0]
-                dart.orientation = simd_quatf(angle: .pi / 10, axis: [1, 0, 0])
-
-                // Physik + Dämpfung
-                var body = PhysicsBodyComponent(massProperties: .default, material: .default, mode: .dynamic)
-                body.linearDamping = 0.1
-                body.angularDamping = 5.0
-                body.isAffectedByGravity = false
-                dart.components.set(body)
-
-                // Kollision als Kapsel
-                dart.components.set(
-                    CollisionComponent(
-                        shapes: [ShapeResource.generateCapsule(height: height, radius: radius)]
-                    )
-                )
-
-                // Direkt zur Szene hinzufügen
-                content.add(dart)
-            }
         }
-//        .overlay(alignment: .bottom) {
-//            // UI/Controls zum Werfen von Darts
-//            DartThrowView()
-//                .padding()
-//        }
     }
 }
 
@@ -78,3 +74,4 @@ struct ImmersiveView: View {
     ImmersiveView()
         .environment(AppModel())
 }
+
