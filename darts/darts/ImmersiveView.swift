@@ -227,6 +227,71 @@ struct ImmersiveView: View {
                     }
                 }
             }
+            
+            _ = content.subscribe(to: ManipulationEvents.WillEnd.self) { event in
+                guard
+                    let model = event.entity as? ModelEntity,
+                    model.name == "Dart"
+                else { return }
+
+                // Read tracked release velocity (still valid in WillEnd)
+                let velocity =
+                    model.components[VelocityTrackingComponent.self]?.linearVelocity ?? .zero
+
+                let speed = length(velocity)
+                let throwThreshold: Float = 0.25
+
+                // 🟢 Drop (no throw) → let gravity place the dart
+                if speed < throwThreshold {
+                    // Remove manipulation control
+                    model.components.remove(ManipulationComponent.self)
+                    model.components.remove(InputTargetComponent.self)
+
+                    if var body = model.components[PhysicsBodyComponent.self] {
+                        body.mode = .dynamic
+                        body.linearDamping = 0.8
+                        body.angularDamping = 8.0
+                        model.components.set(body)
+                    }
+
+                    // Ensure no residual throw velocity
+                    var motion = PhysicsMotionComponent()
+                    motion.linearVelocity = .zero
+                    motion.angularVelocity = .zero
+                    model.components.set(motion)
+
+                    // Cleanup
+                    model.components.remove(VelocityTrackingComponent.self)
+                    return
+                }
+
+                // 🚫 Hand-off from manipulation to physics
+                model.components.remove(ManipulationComponent.self)
+                model.components.remove(InputTargetComponent.self)
+
+                if var body = model.components[PhysicsBodyComponent.self] {
+                    body.mode = .dynamic
+                    body.linearDamping = 0.05
+                    body.angularDamping = 6.0
+                    model.components.set(body)
+                }
+
+                // 🎯 Force direction toward dartboard
+                if let dartboard = model.scene?.findEntity(named: "Dartboard") {
+                    let from = model.position(relativeTo: nil)
+                    let to = dartboard.position(relativeTo: nil)
+                    let direction = normalize(to - from)
+
+                    let strength = max(speed, 0.6)
+
+                    var motion = PhysicsMotionComponent()
+                    motion.linearVelocity = direction * strength * 1.5
+                    model.components.set(motion)
+                }
+
+                // Cleanup
+                model.components.remove(VelocityTrackingComponent.self)
+            }
         } update: { content in
             for entity in content.entities {
                 guard entity.name == "Dart",
@@ -238,57 +303,6 @@ struct ImmersiveView: View {
                 entity.components.set(state)
             }
         }
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .targetedToAnyEntity()
-                .onEnded { value in
-                    guard
-                        let model = value.entity as? ModelEntity,
-                        model.name == "Dart" || model.name == "Ball"
-                    else { return }
-
-                    let velocity = (model.components[VelocityTrackingComponent.self]?.linearVelocity ?? .zero)
-
-                    // 🔒 If the release was slow, treat it as "drop", not "throw"
-                    let speed = length(velocity)
-                    let throwThreshold: Float = 0.25   // tune if needed
-
-                    if speed < throwThreshold {
-                        // 🟢 Drop: keep dart where released (no gravity)
-                        if var body = model.components[PhysicsBodyComponent.self] {
-                            body.mode = .kinematic
-                            model.components.set(body)
-                        }
-                        return
-                    }
-                    
-                    //  Remove system control completely
-                    model.components.remove(ManipulationComponent.self)
-                    model.components.remove(InputTargetComponent.self)
-
-                    //  Enable physics WITHOUT resetting transform
-                    if var body = model.components[PhysicsBodyComponent.self] {
-                        body.mode = .dynamic
-                        body.linearDamping = 0.05
-                        body.angularDamping = 6.0
-                        model.components.set(body)
-                    }
-
-                    // Use velocity from tracking component
-                    var motion = PhysicsMotionComponent()
-                    motion.linearVelocity = velocity * 1.2 // throw strength multiplier
-                    model.components.set(motion)
-
-                    // 🧹 Stop tracking after throw to avoid snap-back
-                    model.components.remove(VelocityTrackingComponent.self)
-
-                    // Update state (optional)
-                    if var state = model.components[DartStateComponent.self] {
-                        state.wasThrown = true
-                        model.components.set(state)
-                    }
-                }
-        )
     }
 }
 
