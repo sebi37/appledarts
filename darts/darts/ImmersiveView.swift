@@ -9,6 +9,12 @@ struct DartStateComponent: Component {
     var wasThrown: Bool = false
 }
 
+// MARK: - Track velocity while manipulating (for throw-on-release)
+struct VelocityTrackingComponent: Component {
+    var lastPosition: SIMD3<Float>?
+    var linearVelocity: SIMD3<Float> = .zero
+}
+
 struct ImmersiveView: View {
 
     // MARK: - Dart
@@ -37,11 +43,12 @@ struct ImmersiveView: View {
         dart.components.set(InputTargetComponent())
 
         var manipulation = ManipulationComponent()
-        // NOTE: In some visionOS SDK versions, ReleaseBehavior doesn't have `.remove`.
-        // We'll handle "throw" explicitly on tap instead of relying on release behavior.
+        manipulation.releaseBehavior = .stay   // ⬅️ CRITICAL: prevents snap-back on release
+        manipulation.dynamics.scalingBehavior = .none
         dart.components.set(manipulation)
 
         dart.components.set(DartStateComponent())
+        dart.components.set(VelocityTrackingComponent())
         return dart
     }
 
@@ -74,6 +81,37 @@ struct ImmersiveView: View {
         return table
     }
     
+    // MARK: - Floor (prevents falling into the void)
+    func createFloor() -> Entity {
+        let floor = Entity()
+        let size: Float = 10.0
+
+        let shape = ShapeResource.generateBox(
+            width: size,
+            height: 0.02,
+            depth: size
+        )
+
+        floor.components.set(
+            CollisionComponent(shapes: [shape])
+        )
+
+        floor.components.set(
+            PhysicsBodyComponent(
+                shapes: [shape],
+                mass: 1.0,
+                material: PhysicsMaterialResource.generate(
+                    friction: 0.9,
+                    restitution: 0.0
+                ),
+                mode: .static
+            )
+        )
+
+        floor.position = SIMD3(0, 0.0, 0)
+        return floor
+    }
+    
     // MARK: - Ball
     func createBall() -> ModelEntity {
         let radius: Float = 0.04
@@ -101,9 +139,10 @@ struct ImmersiveView: View {
 
         ball.components.set(InputTargetComponent())
 
-        var manipulation = ManipulationComponent()
+        let manipulation = ManipulationComponent()
         ball.components.set(manipulation)
 
+        ball.components.set(VelocityTrackingComponent())
         return ball
     }
 
@@ -142,6 +181,7 @@ struct ImmersiveView: View {
             // 🪑 Tisch
             let table = createTable()
             content.add(table)
+            content.add(createFloor())
 
             // ⚽ Ball auf dem Tisch
             let ball = createBall()
@@ -158,7 +198,35 @@ struct ImmersiveView: View {
                 )
                 content.add(dart)
             }
+            
+            _ = content.subscribe(to: SceneEvents.Update.self) { event in
+                let dt = max(Float(event.deltaTime), 0.001)
 
+                for entity in event.scene.performQuery(EntityQuery(where: .has(VelocityTrackingComponent.self))) {
+                    guard let model = entity as? ModelEntity else { continue }
+
+                    // Only track while the user is manipulating the entity (so "release" velocity makes sense)
+                    guard model.components[ManipulationComponent.self] != nil else {
+                        // Reset the last position when not being held to avoid stale spikes
+                        if var vt = model.components[VelocityTrackingComponent.self] {
+                            vt.lastPosition = nil
+                            vt.linearVelocity = .zero
+                            model.components.set(vt)
+                        }
+                        continue
+                    }
+
+                    let pos = model.position(relativeTo: nil)
+
+                    if var vt = model.components[VelocityTrackingComponent.self] {
+                        if let last = vt.lastPosition {
+                            vt.linearVelocity = (pos - last) / dt
+                        }
+                        vt.lastPosition = pos
+                        model.components.set(vt)
+                    }
+                }
+            }
         } update: { content in
             for entity in content.entities {
                 guard entity.name == "Dart",
@@ -171,40 +239,53 @@ struct ImmersiveView: View {
             }
         }
         .gesture(
-            SpatialTapGesture()
+            DragGesture(minimumDistance: 0)
                 .targetedToAnyEntity()
                 .onEnded { value in
-                    guard value.entity.name == "Dart" || value.entity.name == "Ball" else { return }
+                    guard
+                        let model = value.entity as? ModelEntity,
+                        model.name == "Dart" || model.name == "Ball"
+                    else { return }
 
-                    // Find the dartboard in the same scene (works even if it's not a top-level entity)
-                    let board = value.entity.scene?.findEntity(named: "Dartboard")
-                    let targetPos = board?.position ?? SIMD3<Float>(0, 0.8, -2.0)
+                    let velocity = (model.components[VelocityTrackingComponent.self]?.linearVelocity ?? .zero)
 
-                    guard let dartEntity = value.entity as? ModelEntity else { return }
+                    // 🔒 If the release was slow, treat it as "drop", not "throw"
+                    let speed = length(velocity)
+                    let throwThreshold: Float = 0.25   // tune if needed
 
-                    // Hand over control to physics
-                    dartEntity.components.remove(ManipulationComponent.self)
-                    dartEntity.components.remove(PhysicsMotionComponent.self)
+                    if speed < throwThreshold {
+                        // 🟢 Drop: keep dart where released (no gravity)
+                        if var body = model.components[PhysicsBodyComponent.self] {
+                            body.mode = .kinematic
+                            model.components.set(body)
+                        }
+                        return
+                    }
+                    
+                    //  Remove system control completely
+                    model.components.remove(ManipulationComponent.self)
+                    model.components.remove(InputTargetComponent.self)
 
-                    var body = PhysicsBodyComponent(
-                        massProperties: .default,
-                        material: .default,
-                        mode: .dynamic
-                    )
-                    body.linearDamping = 0.05
-                    body.angularDamping = 8.0
-                    dartEntity.components.set(body)
+                    //  Enable physics WITHOUT resetting transform
+                    if var body = model.components[PhysicsBodyComponent.self] {
+                        body.mode = .dynamic
+                        body.linearDamping = 0.05
+                        body.angularDamping = 6.0
+                        model.components.set(body)
+                    }
 
-                    // Throw toward the dartboard
-                    let direction = normalize(targetPos - dartEntity.position)
+                    // Use velocity from tracking component
                     var motion = PhysicsMotionComponent()
-                    motion.linearVelocity = direction * 4.0
-                    dartEntity.components.set(motion)
+                    motion.linearVelocity = velocity * 1.2 // throw strength multiplier
+                    model.components.set(motion)
 
-                    // Mark as thrown (optional; keeps state coherent)
-                    if var state = value.entity.components[DartStateComponent.self] {
+                    // 🧹 Stop tracking after throw to avoid snap-back
+                    model.components.remove(VelocityTrackingComponent.self)
+
+                    // Update state (optional)
+                    if var state = model.components[DartStateComponent.self] {
                         state.wasThrown = true
-                        value.entity.components.set(state)
+                        model.components.set(state)
                     }
                 }
         )
