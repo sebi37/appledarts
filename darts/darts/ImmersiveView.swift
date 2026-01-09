@@ -7,21 +7,25 @@ import RealityKitContent
 struct DartStateComponent: Component {
     var wasHeld: Bool = false
     var wasThrown: Bool = false
+    var isStuck: Bool = false
 }
 
-// MARK: - Track velocity while manipulating (for throw-on-release)
+// MARK: - Track velocity while manipulating
 struct VelocityTrackingComponent: Component {
     var lastPosition: SIMD3<Float>?
     var linearVelocity: SIMD3<Float> = .zero
 }
 
 struct ImmersiveView: View {
+    
+    @State private var darts: [ModelEntity] = []
+    @State private var resetFlag = false
 
     // MARK: - Dart
     func createDart() -> ModelEntity {
         let dart = ModelEntity(
             mesh: .generateCylinder(height: 0.15, radius: 0.005),
-            materials: [SimpleMaterial(color: UIColor.gray, isMetallic: true)]
+            materials: [SimpleMaterial(color: .gray, isMetallic: true)]
         )
 
         dart.name = "Dart"
@@ -31,6 +35,12 @@ struct ImmersiveView: View {
                 shapes: [.generateCapsule(height: 0.15, radius: 0.01)]
             )
         )
+        
+        dart.orientation = simd_quatf(
+            angle: .pi / 2,
+            axis: SIMD3<Float>(1, 0, 0)
+        )
+
 
         dart.components.set(
             PhysicsBodyComponent(
@@ -43,12 +53,13 @@ struct ImmersiveView: View {
         dart.components.set(InputTargetComponent())
 
         var manipulation = ManipulationComponent()
-        manipulation.releaseBehavior = .stay   // ⬅️ CRITICAL: prevents snap-back on release
+        manipulation.releaseBehavior = .stay
         manipulation.dynamics.scalingBehavior = .none
         dart.components.set(manipulation)
 
         dart.components.set(DartStateComponent())
         dart.components.set(VelocityTrackingComponent())
+
         return dart
     }
 
@@ -58,18 +69,14 @@ struct ImmersiveView: View {
 
         let table = ModelEntity(
             mesh: .generateBox(size: size),
-            materials: [SimpleMaterial(color: UIColor.brown, isMetallic: false)]
+            materials: [SimpleMaterial(color: .brown, isMetallic: false)]
         )
 
         table.name = "Table"
         table.position = SIMD3(0, 0.8, -0.6)
 
         table.components.set(
-            PhysicsBodyComponent(
-                massProperties: .default,
-                material: .default,
-                mode: .static
-            )
+            PhysicsBodyComponent(mode: .static)
         )
 
         table.components.set(
@@ -80,8 +87,8 @@ struct ImmersiveView: View {
 
         return table
     }
-    
-    // MARK: - Floor (prevents falling into the void)
+
+    // MARK: - Floor
     func createFloor() -> Entity {
         let floor = Entity()
         let size: Float = 10.0
@@ -92,18 +99,12 @@ struct ImmersiveView: View {
             depth: size
         )
 
-        floor.components.set(
-            CollisionComponent(shapes: [shape])
-        )
-
+        floor.components.set(CollisionComponent(shapes: [shape]))
         floor.components.set(
             PhysicsBodyComponent(
                 shapes: [shape],
                 mass: 1.0,
-                material: PhysicsMaterialResource.generate(
-                    friction: 0.9,
-                    restitution: 0.0
-                ),
+                material: .default,
                 mode: .static
             )
         )
@@ -111,200 +112,189 @@ struct ImmersiveView: View {
         floor.position = SIMD3(0, 0.0, 0)
         return floor
     }
-    
-    // MARK: - Ball
-    func createBall() -> ModelEntity {
-        let radius: Float = 0.04
 
-        let ball = ModelEntity(
-            mesh: .generateSphere(radius: radius),
-            materials: [SimpleMaterial(color: .blue, isMetallic: false)]
-        )
+    // MARK: - Dartboard mit 5 Ringen
+    func createTargetMarker() -> Entity {
+        let container = Entity()
 
-        ball.name = "Ball"
+        // Ringe: äußerster bis innerster
+        let ringRadii: [Float] = [0.25, 0.20, 0.15, 0.10, 0.05]
+        let ringColors: [UIColor] = [.red, .white, .blue, .yellow, .green]
+        let ringPoints: [Int] = [10, 20, 30, 40, 50] // Punkte für jeden Ring
+        let ringHeight: Float = 0.02
+        let ringOffset: Float = 0.003 // kleine Z-Verschiebung, um Überschneidungen zu vermeiden
 
-        ball.components.set(
-            CollisionComponent(
-                shapes: [.generateSphere(radius: radius)]
+        for i in 0..<ringRadii.count {
+            // Mesh erstellen
+            let ring = ModelEntity(
+                mesh: .generateCylinder(height: ringHeight, radius: ringRadii[i]),
+                materials: [SimpleMaterial(color: ringColors[i], isMetallic: false)]
             )
-        )
 
-        ball.components.set(
-            PhysicsBodyComponent(
-                massProperties: .default,
-                material: .default,
-                mode: .dynamic
+            // Ringe horizontal ausrichten
+            ring.orientation = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
+            ring.position = SIMD3(0, 1.2, -1.2 + Float(i) * ringOffset)
+
+            // Collision vom Mesh ableiten (rund statt Box)
+            if let convexShape = try? ShapeResource.generateConvex(from: ring.model!.mesh) {
+                ring.components.set(CollisionComponent(shapes: [convexShape]))
+            }
+
+            // Physics Body statisch setzen
+            ring.components.set(
+                PhysicsBodyComponent(
+                    massProperties: .default,
+                    material: .default,
+                    mode: .static
+                )
             )
-        )
 
-        ball.components.set(InputTargetComponent())
+            // Punkte als Component speichern
+            struct RingPointsComponent: Component {
+                var points: Int
+            }
+            ring.components.set(RingPointsComponent(points: ringPoints[i]))
 
-        let manipulation = ManipulationComponent()
-        ball.components.set(manipulation)
+            ring.name = "Ring_\(i)"
+            container.addChild(ring)
+        }
 
-        ball.components.set(VelocityTrackingComponent())
-        return ball
+        return container
     }
 
+
+    /// MARK: - View
     var body: some View {
-        RealityView { content in
-
-            // 🎯 Dartboard
-            if let scene = try? await Entity(
-                named: "Immersive",
-                in: realityKitContentBundle
-            ),
-            let dartboard = scene.findEntity(named: "Dartboard") {
-
-                dartboard.name = "Dartboard"
-                dartboard.generateCollisionShapes(recursive: true)
-
-                dartboard.components.set(
-                    PhysicsBodyComponent(
-                        massProperties: .default,
-                        material: .default,
-                        mode: .static
-                    )
-                )
-
-                // ✅ DAS WAR DIE FEHLENDE ÄNDERUNG
-                dartboard.components.set(InputTargetComponent())
-
-                var manipulation = ManipulationComponent()
-                manipulation.releaseBehavior = .stay
-                manipulation.dynamics.scalingBehavior = .none
-                dartboard.components.set(manipulation)
-
-                content.add(dartboard)
-            }
-
-            // 🪑 Tisch
-            let table = createTable()
-            content.add(table)
-            content.add(createFloor())
-
-            // ⚽ Ball auf dem Tisch
-            let ball = createBall()
-            ball.position = SIMD3(0.2, 0.9, -0.6)
-            content.add(ball)
-
-            // 🎯 Drei Darts
-            for i in 0..<3 {
-                let dart = createDart()
-                dart.position = SIMD3(
-                    -0.1 + Float(i) * 0.1,
-                    0.85,
-                    -0.6
-                )
-                content.add(dart)
-            }
+        ZStack(alignment: .topTrailing) {
             
-            _ = content.subscribe(to: SceneEvents.Update.self) { event in
-                let dt = max(Float(event.deltaTime), 0.001)
+            RealityView { content in
+                content.add(createTable())
+                content.add(createFloor())
+                content.add(createTargetMarker())
 
-                for entity in event.scene.performQuery(EntityQuery(where: .has(VelocityTrackingComponent.self))) {
-                    guard let model = entity as? ModelEntity else { continue }
-
-                    // Only track while the user is manipulating the entity (so "release" velocity makes sense)
-                    guard model.components[ManipulationComponent.self] != nil else {
-                        // Reset the last position when not being held to avoid stale spikes
-                        if var vt = model.components[VelocityTrackingComponent.self] {
-                            vt.lastPosition = nil
-                            vt.linearVelocity = .zero
-                            model.components.set(vt)
-                        }
-                        continue
-                    }
-
-                    let pos = model.position(relativeTo: nil)
-
-                    if var vt = model.components[VelocityTrackingComponent.self] {
-                        if let last = vt.lastPosition {
-                            vt.linearVelocity = (pos - last) / dt
-                        }
-                        vt.lastPosition = pos
-                        model.components.set(vt)
-                    }
+                for i in 0..<3 {
+                    let dart = createDart()
+                    dart.position = SIMD3(-0.1 + Float(i) * 0.1, 0.85, -0.6)
+                    darts.append(dart)
+                    content.add(dart)
                 }
-            }
-            
-            _ = content.subscribe(to: ManipulationEvents.WillEnd.self) { event in
-                guard
-                    let model = event.entity as? ModelEntity,
-                    model.name == "Dart"
-                else { return }
+                
+                // --- Collision Listener ---
+                _ = content.subscribe(to: CollisionEvents.Began.self) { event in
+                    guard
+                        let dart = event.entityA as? ModelEntity ?? event.entityB as? ModelEntity,
+                        dart.name == "Dart"
+                    else { return }
 
-                // Read tracked release velocity (still valid in WillEnd)
-                let velocity =
-                    model.components[VelocityTrackingComponent.self]?.linearVelocity ?? .zero
+                    var state = dart.components[DartStateComponent.self] ?? DartStateComponent()
+                    if state.isStuck { return }
 
-                let speed = length(velocity)
-                let throwThreshold: Float = 0.25
+                    let ring = (event.entityA as? ModelEntity)?.name.starts(with: "Ring_") == true
+                        ? event.entityA as! ModelEntity
+                        : (event.entityB as? ModelEntity)?.name.starts(with: "Ring_") == true
+                            ? event.entityB as! ModelEntity
+                            : nil
+                    guard let hitRing = ring else { return }
 
-                // 🟢 Drop (no throw) → let gravity place the dart
-                if speed < throwThreshold {
-                    // Remove manipulation control
+                    // Dart auf Scheibe kleben lassen
+                    dart.components.remove(PhysicsMotionComponent.self)
+                    if var body = dart.components[PhysicsBodyComponent.self] {
+                        body.mode = .kinematic
+                        dart.components.set(body)
+                    }
+                    dart.components.remove(CollisionComponent.self)
+
+                    state.isStuck = true
+                    dart.components.set(state)
+
+                    let ringIndex = Int(hitRing.name.split(separator: "_")[1]) ?? 0
+                    let points = (5 - ringIndex) * 10
+                    print("Treffer Ring \(ringIndex), Punkte: \(points)")
+                    
+                    resetFlag = false
+                }
+
+                
+                // --- Throw / Drop ---
+                _ = content.subscribe(to: ManipulationEvents.WillEnd.self) { event in
+                    guard
+                        let model = event.entity as? ModelEntity,
+                        model.name == "Dart"
+                    else { return }
+
+                    let velocity =
+                        model.components[VelocityTrackingComponent.self]?.linearVelocity ?? .zero
+
+                    let speed = length(velocity)
+                    let throwThreshold: Float = 0.25
+
                     model.components.remove(ManipulationComponent.self)
                     model.components.remove(InputTargetComponent.self)
 
                     if var body = model.components[PhysicsBodyComponent.self] {
                         body.mode = .dynamic
-                        body.linearDamping = 0.8
-                        body.angularDamping = 8.0
+                        body.linearDamping = speed < throwThreshold ? 0.8 : 0.05
+                        body.angularDamping = speed < throwThreshold ? 8.0 : 6.0
                         model.components.set(body)
                     }
 
-                    // Ensure no residual throw velocity
                     var motion = PhysicsMotionComponent()
-                    motion.linearVelocity = .zero
-                    motion.angularVelocity = .zero
+                    motion.linearVelocity = SIMD3<Float>(0, 2.0, -4.5)
                     model.components.set(motion)
-
-                    // Cleanup
                     model.components.remove(VelocityTrackingComponent.self)
-                    return
+                }
+                
+
+
+            } update: { content in
+                // --- Reset check ---
+                if resetFlag {
+                    // Alle alten Darts löschen
+                    for dart in darts {
+                        dart.removeFromParent()
+                    }
+                    darts.removeAll()
+                    
+                    // neue darts erstellen
+                    for i in 0..<3 {
+                        let dart = createDart()
+                        dart.position = SIMD3(-0.1 + Float(i) * 0.1, 0.85, -0.6)
+                        darts.append(dart)
+                        content.add(dart)
+                    }
+                    resetFlag = false
+
                 }
 
-                // 🚫 Hand-off from manipulation to physics
-                model.components.remove(ManipulationComponent.self)
-                model.components.remove(InputTargetComponent.self)
-
-                if var body = model.components[PhysicsBodyComponent.self] {
-                    body.mode = .dynamic
-                    body.linearDamping = 0.05
-                    body.angularDamping = 6.0
-                    model.components.set(body)
+                // --- bestehende Update-Logik ---
+                for entity in content.entities {
+                    guard entity.name == "Dart",
+                          var state = entity.components[DartStateComponent.self]
+                    else { continue }
+                    
+                    state.wasHeld = entity.components[ManipulationComponent.self] != nil
+                    content.entities.first { $0.id == entity.id }?
+                        .components.set(state)
                 }
-
-                // 🎯 Force direction toward dartboard
-                if let dartboard = model.scene?.findEntity(named: "Dartboard") {
-                    let from = model.position(relativeTo: nil)
-                    let to = dartboard.position(relativeTo: nil)
-                    let direction = normalize(to - from)
-
-                    let strength = max(speed, 0.6)
-
-                    var motion = PhysicsMotionComponent()
-                    motion.linearVelocity = direction * strength * 1.5
-                    model.components.set(motion)
-                }
-
-                // Cleanup
-                model.components.remove(VelocityTrackingComponent.self)
             }
-        } update: { content in
-            for entity in content.entities {
-                guard entity.name == "Dart",
-                      var state = entity.components[DartStateComponent.self]
-                else { continue }
 
-                let isCurrentlyHeld = entity.components[ManipulationComponent.self] != nil
-                state.wasHeld = isCurrentlyHeld
-                entity.components.set(state)
+            // MARK: Reset Button
+            
+            Button("Reset") {
+                resetFlag = true
             }
-        }
-    }
-}
+            .padding()
+            .background(.ultraThinMaterial)
+            .cornerRadius(8)
+            .padding(.trailing, 20)
+            .padding(.top, 20)
+            
+
+                    }
+                }
+            }
+    
+
 
 #Preview {
     ImmersiveView()
